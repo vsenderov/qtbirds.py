@@ -1,5 +1,5 @@
 import json
-from .models import QTNode, QTLeaf
+from .QTTree import QTNode, QTLeaf
 
 type_map = {
     "node": QTNode,
