@@ -25,6 +25,10 @@ def calc_jump_matrix(Q):
                 
     return J
 
+def possible_message_states(n):
+    return [[1.0 if row == col else 0.0 for col in range(n)] for row in range(n)]
+
+
 class TestCalcJumpMatrix(unittest.TestCase):
     def test_uniform_jump_probabilities(self):
         Q1 = np.array([[-1., 1.],
@@ -51,6 +55,23 @@ class TestCalcJumpMatrix(unittest.TestCase):
             print("Calculated J2:\n", J2)
             print("Expected J2:\n", expected_J2)
         self.assertTrue(np.allclose(J2, expected_J2))
+    
+    def test_possible_message_states(self):
+        # Test for n=3
+        matrix_3 = possible_message_states(3)
+        expected_3 = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        self.assertEqual(matrix_3, expected_3)
+
+        # Test for n=2
+        matrix_2 = possible_message_states(2)
+        expected_2 = [[1.0, 0.0], [0.0, 1.0]]
+        self.assertEqual(matrix_2, expected_2)
+
+        # Test for n=1
+        matrix_1 = possible_message_states(1)
+        expected_1 = [[1.0]]
+        self.assertEqual(matrix_1, expected_1)
+
 
 
 # This allows the test to be run from the command line
