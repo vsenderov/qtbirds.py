@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="qtbirds_package",
-    version="0.3",
+    version="0.4",
     description="Prepares TreePPL data",
     author="Viktor Senderov and Jan Kudlicka",
     author_email="vsenderov@gmail.com",
