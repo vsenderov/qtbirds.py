@@ -46,3 +46,18 @@ def optimal_subsample_size(inference_result):
     compressed_samples, compressed_nweights = compress_samples(inference_result.samples, inference_result.nweights)
     ess = calculate_ess(compressed_nweights)
     return Math.ceil(ess)
+
+def weighted_mode(values, weights):
+    values_array = np.array(values)
+    weights_array = np.array(weights)
+    max_weight = np.max(weights_array)
+    mode_candidates = values_array[weights_array == max_weight]
+
+    # If there's only one candidate, return it
+    if len(mode_candidates) == 1:
+        return mode_candidates[0]
+    
+    # If there are multiple candidates, return the median
+    return np.median(mode_candidates)
+
+

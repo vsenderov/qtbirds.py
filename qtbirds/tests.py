@@ -1,49 +1,7 @@
-import numpy as np
 import unittest
-
-def jukes_cantor():
-    """
-    Returns the Jukes-Cantor Q-matrix for molecular data.
-    """
-    return np.array([[-1., 1/3, 1/3, 1/3],
-                     [1/3, -1., 1/3, 1/3],
-                     [1/3, 1/3, -1., 1/3],
-                     [1/3, 1/3, 1/3, -1.]])
-
-def mk2():
-    """
-    Returns the Markov k=2 Q-matrix for character data.
-    """
-    return np.array([[-1., 1.],
-                     [1., -1.]])
-
-def calc_jump_matrix(Q):
-    """
-    This function takes a rate matrix Q of a continuous-time Markov chain (CTMC)
-    and outputs the embedded jump chain matrix J.
-    
-    The jump matrix J represents the probabilities of transitioning from one state
-    to another given that a transition has occurred, excluding self-transitions.
-    
-    :param Q: A square numpy array representing the rate matrix of a CTMC.
-    :return: A numpy array representing the jump matrix J.
-    """
-    # Initialize J with zeros, having the same dimensions as Q
-    J = np.zeros_like(Q)
-    
-    # Iterate over rows and columns of Q to compute J
-    for row in range(Q.shape[0]):
-        for col in range(Q.shape[1]):
-            if row != col:
-                # Off-diagonal entries: Q[row][col] / -Q[row][row]
-                J[row][col] = Q[row][col] / -Q[row][row]
-            # Diagonal entries in J are set to 0 as self-transitions are excluded
-                
-    return J
-
-def possible_message_states(n):
-    return [[1.0 if row == col else 0.0 for col in range(n)] for row in range(n)]
-
+import numpy as np
+from .linear_algebra import calc_jump_matrix, possible_message_states
+from .simulation import weighted_mode 
 
 class TestCalcJumpMatrix(unittest.TestCase):
     def test_uniform_jump_probabilities(self):
@@ -88,7 +46,38 @@ class TestCalcJumpMatrix(unittest.TestCase):
         expected_1 = [[1.0]]
         self.assertEqual(matrix_1, expected_1)
 
+class TestWeightedStatistics(unittest.TestCase):
+    
+    def test_weighted_mode(self):
+        values = [1., 2., 2., 3., 4.]
+        weights = [1., 2., 1., 1., 1.]
+        expected_mode = 2
+        calculated_mode = weighted_mode(values, weights)
+        self.assertEqual(calculated_mode, expected_mode)
+    
+    # Additional tests for weighted_mode
+    def test_weighted_mode_multiple_modes(self):
+        values = [1., 2., 2., 3., 3.]
+        weights = [1., 2., 1., 2., 1.]
+        expected_mode = 2.5  # Both 2 and 3 have the same highest weight
+        calculated_mode = weighted_mode(values, weights)
+        self.assertEqual(calculated_mode, expected_mode)
 
+    # Additional tests for weighted_mode
+    def test_weighted_mode_multiple_modes2(self):
+        values =  [1., 2., 2., 3., 3., 2.1 ]
+        weights = [1., 2., 1., 2., 1., 2.0]
+        expected_mode = 2.1  
+        calculated_mode = weighted_mode(values, weights)
+        self.assertEqual(calculated_mode, expected_mode)
+
+    def test_weighted_mode_empty_lists(self):
+        values = []
+        weights = []
+        with self.assertRaises(ValueError):
+            weighted_mode(values, weights)
+
+    # Additional tests can be added here to test other edge cases or different scenarios
 
 # This allows the test to be run from the command line
 if __name__ == '__main__':
