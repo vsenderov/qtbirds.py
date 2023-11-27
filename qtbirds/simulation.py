@@ -3,12 +3,10 @@ import json
 import uuid
 import os
 import numpy as np
-from scipy.stats import gamma
 from timeit import default_timer as timer
-from .utils import load_data, optimal_subsample_size, weighted_mode
-from .linear_algebra import calc_jump_matrix, possible_message_states, jukes_cantor, mk2
+from .utils import load_data, optimal_subsample_size
+from .linear_algebra import calc_jump_matrix, possible_message_states
 import treeppl
-import pandas as pd
 
 def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta", 
                    tree_file="phylo/jeremy-crbd.tre.phyjson", 
