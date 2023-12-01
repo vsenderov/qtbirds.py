@@ -1,6 +1,7 @@
 import json
 import numpy as np
 import math as Math
+import arviz as az
 from .QTTree import QTNode, QTLeaf
 
 type_map = {
@@ -59,5 +60,40 @@ def weighted_mode(values, weights):
     
     # If there are multiple candidates, return the median
     return np.median(mode_candidates)
+
+
+def compute_hdpi(samples, log_weights, hdpi_prob=0.95):
+    # Convert log weights to linear scale and normalize
+    linear_weights = np.exp(log_weights - np.max(log_weights))
+    normalized_weights = linear_weights / np.sum(linear_weights)
+
+    # Resample the samples based on the weights
+    weighted_samples = np.random.choice(samples, size=len(samples), p=normalized_weights)
+
+    # Compute the HDPI using arviz
+    hdpi_interval = az.hdi(weighted_samples, hdi_prob=hdpi_prob)
+
+    return hdpi_interval
+
+
+def find_min_hdpi_prob(x, samples, log_weights):
+    low = 0.01
+    high = 1.00
+    resolution = 0.01
+    min_hdpi_prob = None
+
+    while high - low > resolution:
+        mid = (high + low) / 2
+        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=mid)
+
+        if current_hdpi[0] <= x <= current_hdpi[1]:
+            # x is within the interval, try narrowing it
+            high = mid
+            min_hdpi_prob = mid
+        else:
+            # x is not within the interval, need to widen it
+            low = mid
+
+    return min_hdpi_prob
 
 
