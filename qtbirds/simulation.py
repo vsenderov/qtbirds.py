@@ -117,6 +117,7 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
 
     # Run the model
     with treeppl.Model(filename=os.path.join(qthome, "qtbirds.tppl/qtbirds.tppl"), samples=sweep_samples, method=mthd) as qtbirds:
+        print("Model compiled. Running inference with", sweep_samples, "samples/particles and", mthd);
         while len(lambda_samples) < total_samples:
             start = timer()
             res = qtbirds(tree=tree, normQChar=norm_q_char, jChar=jChar, charMessages=startMessages,

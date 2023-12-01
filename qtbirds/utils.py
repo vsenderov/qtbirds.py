@@ -3,6 +3,8 @@ import numpy as np
 import math as Math
 import arviz as az
 from .QTTree import QTNode, QTLeaf
+from scipy.stats import gaussian_kde
+from scipy.optimize import minimize_scalar
 
 type_map = {
     "node": QTNode,
@@ -48,18 +50,26 @@ def optimal_subsample_size(inference_result):
     ess = calculate_ess(compressed_nweights)
     return Math.ceil(ess)
 
-def weighted_mode(values, weights):
-    values_array = np.array(values)
-    weights_array = np.array(weights)
-    max_weight = np.max(weights_array)
-    mode_candidates = values_array[weights_array == max_weight]
 
-    # If there's only one candidate, return it
-    if len(mode_candidates) == 1:
-        return mode_candidates[0]
-    
-    # If there are multiple candidates, return the median
-    return np.median(mode_candidates)
+def find_MAP(values, weights):
+    # Normalize the weights to avoid numerical instability
+    normalized_weights = np.exp(weights - np.max(weights))
+
+    # Create a KDE using the values and normalized weights
+    kde = gaussian_kde(values, weights=normalized_weights)
+
+    # Function to return the negative of KDE (since we want to maximize the KDE)
+    def neg_kde(x):
+        return -kde(x)[0]
+
+    # Find the maximum of the KDE
+    result = minimize_scalar(neg_kde, bounds=(min(values), max(values)), method='bounded')
+
+    if result.success:
+        return result.x
+    else:
+        raise ValueError("Optimization did not converge")
+
 
 
 def compute_hdpi(samples, log_weights, hdpi_prob=0.95):
