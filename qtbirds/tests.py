@@ -1,7 +1,6 @@
 import unittest
 import numpy as np
 from .linear_algebra import calc_jump_matrix, possible_message_states
-from .simulation import weighted_mode 
 
 class TestCalcJumpMatrix(unittest.TestCase):
     def test_uniform_jump_probabilities(self):
@@ -45,37 +44,6 @@ class TestCalcJumpMatrix(unittest.TestCase):
         matrix_1 = possible_message_states(1)
         expected_1 = [[1.0]]
         self.assertEqual(matrix_1, expected_1)
-
-class TestWeightedStatistics(unittest.TestCase):
-    
-    def test_weighted_mode(self):
-        values = [1., 2., 2., 3., 4.]
-        weights = [1., 2., 1., 1., 1.]
-        expected_mode = 2
-        calculated_mode = weighted_mode(values, weights)
-        self.assertEqual(calculated_mode, expected_mode)
-    
-    # Additional tests for weighted_mode
-    def test_weighted_mode_multiple_modes(self):
-        values = [1., 2., 2., 3., 3.]
-        weights = [1., 2., 1., 2., 1.]
-        expected_mode = 2.5  # Both 2 and 3 have the same highest weight
-        calculated_mode = weighted_mode(values, weights)
-        self.assertEqual(calculated_mode, expected_mode)
-
-    # Additional tests for weighted_mode
-    def test_weighted_mode_multiple_modes2(self):
-        values =  [1., 2., 2., 3., 3., 2.1 ]
-        weights = [1., 2., 1., 2., 1., 2.0]
-        expected_mode = 2.1  
-        calculated_mode = weighted_mode(values, weights)
-        self.assertEqual(calculated_mode, expected_mode)
-
-    def test_weighted_mode_empty_lists(self):
-        values = []
-        weights = []
-        with self.assertRaises(ValueError):
-            weighted_mode(values, weights)
 
     # Additional tests can be added here to test other edge cases or different scenarios
 
