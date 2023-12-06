@@ -1,10 +1,11 @@
 import json
 import numpy as np
 import math as Math
-import arviz as az
 from .QTTree import QTNode, QTLeaf
 from scipy.stats import gaussian_kde
 from scipy.optimize import minimize_scalar
+from scipy.stats import gaussian_kde
+import numpy as np
 
 type_map = {
     "node": QTNode,
@@ -73,37 +74,52 @@ def find_MAP(values, weights):
 
 
 def compute_hdpi(samples, log_weights, hdpi_prob=0.95):
-    # Convert log weights to linear scale and normalize
+    # Convert log weights to linear scale
     linear_weights = np.exp(log_weights - np.max(log_weights))
-    normalized_weights = linear_weights / np.sum(linear_weights)
 
-    # Resample the samples based on the weights
-    weighted_samples = np.random.choice(samples, size=len(samples), p=normalized_weights)
+    # Perform weighted KDE
+    kde = gaussian_kde(samples, weights=linear_weights)
 
-    # Compute the HDPI using arviz
-    hdpi_interval = az.hdi(weighted_samples, hdi_prob=hdpi_prob)
+    # Compute the HDPI
+    # This step involves finding the densest interval containing hdpi_prob of the probability mass
+    # It requires custom implementation, as scipy's gaussian_kde doesn't provide a direct method for this
+    
+    # Example implementation (simplified and may need optimization):
+    grid_points = np.linspace(min(samples), max(samples), 1000)  # Adjust granularity as needed
+    kde_values = kde(grid_points)
+    sorted_indices = np.argsort(kde_values)[::-1]  # Sort by density
+
+    cumulative_prob = 0
+    interval_indices = []
+    for idx in sorted_indices:
+        interval_indices.append(idx)
+        cumulative_prob += kde_values[idx] / sum(kde_values)
+        if cumulative_prob >= hdpi_prob:
+            break
+
+    interval_indices = np.sort(interval_indices)
+    hdpi_interval = (grid_points[interval_indices[0]], grid_points[interval_indices[-1]])
 
     return hdpi_interval
 
 
 def find_min_hdpi_prob(x, samples, log_weights):
-    low = 0.01
-    high = 1.00
-    resolution = 0.01
-    min_hdpi_prob = None
+    hdpi_prob = 0.01  # Start with the smallest interval probability
+    max_hdpi_prob = 1.00  # Maximum interval probability
+    resolution = 0.01  # Increment resolution
 
-    while high - low > resolution:
-        mid = (high + low) / 2
-        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=mid)
+    while hdpi_prob <= max_hdpi_prob:
+        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=hdpi_prob)
 
         if current_hdpi[0] <= x <= current_hdpi[1]:
-            # x is within the interval, try narrowing it
-            high = mid
-            min_hdpi_prob = mid
-        else:
-            # x is not within the interval, need to widen it
-            low = mid
+            # x is within the interval, return the current interval and its probability
+            return hdpi_prob, current_hdpi[0], current_hdpi[1]
 
-    return min_hdpi_prob
+        # Increase the interval probability
+        hdpi_prob += resolution
+
+    # If the loop completes without returning, x is not in any interval.
+    # This is unlikely but could happen if x is an outlier or if there's an issue with the data.
+    return None, None, None
 
 
