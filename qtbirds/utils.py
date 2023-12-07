@@ -120,6 +120,6 @@ def find_min_hdpi_prob(x, samples, log_weights):
 
     # If the loop completes without returning, x is not in any interval.
     # This is unlikely but could happen if x is an outlier or if there's an issue with the data.
-    return None, None, None
+    return None, current_hdpi[0], current_hdpi[1]
 
 
