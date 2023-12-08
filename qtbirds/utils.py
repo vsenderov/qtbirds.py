@@ -84,8 +84,15 @@ def compute_hdpi(samples, log_weights, hdpi_prob=0.95):
     # This step involves finding the densest interval containing hdpi_prob of the probability mass
     # It requires custom implementation, as scipy's gaussian_kde doesn't provide a direct method for this
     
-    # Example implementation (simplified and may need optimization):
-    grid_points = np.linspace(min(samples), max(samples), 1000)  # Adjust granularity as needed
+    # Determine the range for the grid points
+    sample_std = np.std(samples, ddof=1)  # Sample standard deviation
+    bandwidth = kde.factor * sample_std  # Approximate bandwidth used by KDE
+    grid_min = min(samples) - 3 * bandwidth
+    grid_max = max(samples) + 3 * bandwidth
+
+    # Compute the HDPI
+    grid_points = np.linspace(grid_min, grid_max, 1000)
+
     kde_values = kde(grid_points)
     sorted_indices = np.argsort(kde_values)[::-1]  # Sort by density
 
@@ -121,5 +128,27 @@ def find_min_hdpi_prob(x, samples, log_weights):
     # If the loop completes without returning, x is not in any interval.
     # This is unlikely but could happen if x is an outlier or if there's an issue with the data.
     return None, current_hdpi[0], current_hdpi[1]
+
+
+def find_min_hdpi_prob_bin(x, samples, log_weights):
+    low = 0.01  # Lower bound of the search range
+    high = 1.00  # Upper bound of the search range
+    resolution = 0.01  # Desired resolution for the search
+
+    while high - low > resolution:
+        mid = (high + low) / 2
+        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=mid)
+
+        if current_hdpi[0] <= x <= current_hdpi[1]:
+            # x is within the interval, try a smaller interval
+            high = mid
+        else:
+            # x is not within the interval, try a larger interval
+            low = mid
+
+    # Compute the final HDPI at the lower bound of the last search interval
+    # This ensures that the HDPI is the tightest one containing x
+    final_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=high)
+    return high, final_hdpi[0], final_hdpi[1]
 
 
