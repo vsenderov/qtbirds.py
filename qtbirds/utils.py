@@ -70,6 +70,17 @@ def find_MAP(values, weights):
         return result.x
     else:
         raise ValueError("Optimization did not converge")
+    
+
+def find_mean(values, weights):
+    # Normalize the weights to sum up to 1 (to handle any scale of weights)
+    normalized_weights = weights / np.sum(weights)
+
+    # Calculate the weighted mean
+    weighted_mean = np.sum(values * normalized_weights)
+
+    return weighted_mean
+
 
 
 

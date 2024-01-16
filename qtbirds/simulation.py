@@ -7,6 +7,7 @@ from timeit import default_timer as timer
 from .utils import load_data, optimal_subsample_size
 from .linear_algebra import calc_jump_matrix, possible_message_states
 import treeppl
+import pandas as pd
 
 def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta", 
                    tree_file="phylo/jeremy-crbd.tre.phyjson", 
@@ -84,6 +85,7 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
     :param sweep_samples: Number of samples per sweep, particles (default 5000) 
     :return: A tuple containing samples of lambda, mu, nu, the weights, and the tree identifier
     """
+    print("Running inference...")
     # Environment extraction
     qthome = os.environ.get('QTHOME')
     if not qthome:
@@ -116,6 +118,7 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
     lweights = []
 
     # Run the model
+    print("Matrices set up. Attempting to compile...", os.path.join(qthome, "qtbirds.tppl/qtbirds.tppl"), sweep_samples, mthd)
     with treeppl.Model(filename=os.path.join(qthome, "qtbirds.tppl/qtbirds.tppl"), samples=sweep_samples, method=mthd) as qtbirds:
         print("Model compiled. Running inference with", sweep_samples, "samples/particles and", mthd);
         while len(lambda_samples) < total_samples:
@@ -145,3 +148,141 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
             print(f"So far {len(lambda_samples)} samples; present run log Z = {res.norm_const}; total var log Z = {np.var(lweights)}")
 
     return lambda_samples, mu_samples, nu_samples, lweights, tree_label
+
+
+def qtbirds_sim_to_phyjson(tree_data):
+    def process_node(node, parent_age=0):
+        """
+        Recursive function to process each node and construct the PhyJSON tree structure.
+        :return: A JSON object encoded as PhyJSON.
+        """
+        if node["type"] == "leaf":
+            # Return leaf node information
+            return {
+                "taxon": node["index"],
+                "branch_length": parent_age - node["age"]
+            }
+        else:
+            # Process left and right children
+            left_child = process_node(node["left"], node["age"])
+            right_child = process_node(node["right"], node["age"])
+            return {
+                "children": [left_child, right_child],
+                "branch_length": parent_age - node["age"]
+            }
+
+    def convert_to_phyjson(input_json):
+        phyjson = {
+            "format": "phyjson",
+            "version": "1.0",
+            "taxa": [],
+            "characters": [
+                {"id": "dna", "type": "dna", "aligned": False},
+                {"id": "state", "type": "standard", "symbols": ["black", "white"]}
+            ],
+            "trees": []
+        }
+
+        # Process each tree in the input JSON
+        for item in input_json:
+            tree_root = process_node(item["value"], item["value"]["age"])
+            phyjson["trees"].append({
+                "name": "Generated Tree",
+                "rooted": True,
+                "root": tree_root
+            })
+
+            # Extract taxa information from the leaf nodes
+            extract_taxa(item["value"], phyjson["taxa"])
+
+        return phyjson
+
+    def extract_taxa(node, taxa):
+        """
+        Recursive function to extract taxa from the node.
+        """
+        if node["type"] == "leaf":
+            taxa.append({
+                "id": node["index"],
+                "name": f"Taxon {node['index']}",
+                "characters": {
+                    "dna": node["sequence"],
+                    "state": node["character"]
+                }
+            })
+        elif node["type"] == "node":
+            extract_taxa(node["left"], taxa)
+            extract_taxa(node["right"], taxa)
+
+
+    # Your input JSON
+    with open(tree_data, 'r') as file:
+        input_json = json.load(file)
+        
+    #input_json_str = '[{"value": {...}}]'  # Replace with your actual JSON string
+    #input_json = json.loads(input_json_str)
+    phyjson = convert_to_phyjson(input_json)
+
+    # Convert to JSON string for display
+    phyjson_str = json.dumps(phyjson, indent=4)
+    #print(phyjson_str)
+    return phyjson
+
+
+def phyjson_to_newick(node, taxa_map):
+    """
+    Recursive function to convert a PhyJSON tree node into Newick format.
+    Uses taxa names instead of IDs.
+    :return: An array containing Newick strings.
+    """
+    if 'taxon' in node:
+        # Leaf node - use the taxon name from taxa_map
+        taxon_name = taxa_map.get(node['taxon'], f"Unknown_{node['taxon']}")
+        return f"{taxon_name}:{node['branch_length']}"
+    else:
+        # Internal node
+        children_newick = ','.join([phyjson_to_newick(child, taxa_map) for child in node['children']])
+        return f"({children_newick}):{node['branch_length']}"
+
+def convert_trees_to_newick(phyjson_object):
+    """
+    Convert all trees in the PhyJSON 'trees' array to Newick format.
+    Uses names from the taxa list instead of IDs.
+    """
+    # Create a map of taxon IDs to their names
+    taxa_map = {taxon['id']: taxon['name'] for taxon in phyjson_object['taxa']}
+
+    newick_trees = []
+    for tree in phyjson_object['trees']:
+        newick_tree = phyjson_to_newick(tree['root'], taxa_map) + ';'
+        newick_trees.append(newick_tree)
+    return newick_trees
+
+    # Example usage:
+    # Assuming 'phyjson_object' is your entire PhyJSON object
+    # newick_trees = convert_trees_to_newick(phyjson_object)
+
+    # 'newick_trees' now contains Newick representations using taxon names
+
+
+
+def taxa_to_dataframe(phyjson_object):
+    """
+    Convert the taxa information from PhyJSON format to a pandas DataFrame.
+    """
+    # Extract taxa data
+    taxa_data = [{
+        "name": taxon['name'],
+        "state": taxon['characters']['state'],
+        "dna": taxon['characters']['dna']
+    } for taxon in phyjson_object['taxa']]
+
+    # Create DataFrame
+    df = pd.DataFrame(taxa_data, columns=["name", "state", "dna"])
+    return df
+
+    # Example usage:
+    # Assuming 'phyjson_object' is your entire PhyJSON object
+    # taxa_df = taxa_to_dataframe(phyjson_object)
+
+    # 'taxa_df' is a pandas DataFrame with the taxa information
