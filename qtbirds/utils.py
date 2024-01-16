@@ -6,6 +6,7 @@ from scipy.stats import gaussian_kde
 from scipy.optimize import minimize_scalar
 from scipy.stats import gaussian_kde
 import numpy as np
+import os
 
 type_map = {
     "node": QTNode,
@@ -163,3 +164,46 @@ def find_min_hdpi_prob_bin(x, samples, log_weights):
     return high, final_hdpi[0], final_hdpi[1]
 
 
+def save_newick_string(newick, output_file):
+    """
+    Save the first Newick tree string to disk with a new filename.
+    """
+    # Extract the first Newick string (assuming there's only one tree)
+    newick_string = newick[0]
+
+    # Create a new filename with a Newick format extension
+    base_name = os.path.splitext(output_file)[0]
+    newick_filename = base_name + '.nwk'
+
+    # Save the Newick string to the new file
+    with open(newick_filename, 'w') as file:
+        file.write(newick_string)
+    
+    return newick_filename
+
+# Example usage:
+# newick = convert_trees_to_newick(tree_phyjson)
+# output_file = 'output-817bb7d2-10f0-4282-bbd3-bf447304974f.json'
+# save_newick_string(newick, output_file)
+
+# This will save the Newick string in a file with a filename based on 'output_file'
+
+
+def save_dataframe_to_csv(dataframe, output_file):
+    """
+    Save the DataFrame to a CSV file, using a filename based on 'output_file'.
+    """
+    # Create a new filename with a .csv extension
+    base_name = os.path.splitext(output_file)[0]
+    csv_filename = base_name + '.csv'
+
+    # Save the DataFrame to the new file
+    dataframe.to_csv(csv_filename, index=False)
+    return csv_filename
+
+# Example usage:
+# dataframe = taxa_to_dataframe(tree_phyjson)
+# output_file = 'output-817bb7d2-10f0-4282-bbd3-bf447304974f.json'
+# save_dataframe_to_csv(dataframe, output_file)
+
+# This will save the DataFrame in a CSV file with a filename based on 'output_file'
