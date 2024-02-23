@@ -4,15 +4,24 @@ import uuid
 import os
 import numpy as np
 from timeit import default_timer as timer
-from .utils import load_data, optimal_subsample_size
+from .utils import load_data
 from .linear_algebra import calc_jump_matrix, possible_message_states
+from .models import PhenotypicModel, MolecularModel
 import treeppl
 import pandas as pd
+import math as Math
 
-def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta", 
-                   tree_file="phylo/jeremy-crbd.tre.phyjson", 
-                   states="pheno/2state.json", nucleo_json="nucleo/jc69.Q.json", 
-                   pheno_json="pheno/mk-2state.Q.json", lam=0.1, mu=0.1, nu=0.0):
+def run_simulation( qt_webppl_home
+                  , dep_home
+                  , fasta_file
+                  , tree_file
+                  , states_file
+                  , mol_model=MolecularModel.JC69
+                  , pheno_model=PhenotypicModel.MK_2
+                  , lam=0.1
+                  , mu=0.1
+                  , nu=0.0
+                  ):
     """
     This function does a Q-T-Birds simulation by invoking the WebPPL simulator
     via a subprocess command.
@@ -26,9 +35,9 @@ def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta",
     :param dep_home: The directory, in which the dependency packages are subdirs of
     :param fasta_file: The sequence at the root of the tree (default provided)
     :param tree_file: The PhyJSON tree to be enriched (default provided)
-    :param states: The phenotypic states (default provided)
-    :param nucleo_json: The nuclear transitions matrix (default provided)
-    :param mk_json: The phenotypic transitions matrix (default provided)
+    :param states_file: The phenotypic states (default provided)
+    :param mol_model: The nuclear transitions matrix (default provided)
+    :param pheno_model: The phenotypic transitions matrix (default provided)
     :param lam: Phenotypic rate
     :param mu: Molecular rate
     :param nu: Joint rate
@@ -52,11 +61,19 @@ def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta",
     output_filename = f"output-{unique_id}.json"
 
     # Construct the command using os.path.join for robust path handling
+    # command = f"webppl {os.path.join(qt_webppl_home, 'qtbirds-sim.wppl')} --require {os.path.join(dep_home, 'fasta2json')} " \
+    #           f"--require {qt_webppl_home} --require webppl-fs --require {os.path.join(dep_home, 'phywppl/phyjs')} -- " \
+    #           f"{os.path.join(qt_webppl_home, fasta_file)} {os.path.join(qt_webppl_home, tree_file)} {rates_filename} " \
+    #           f"{os.path.join(qt_webppl_home, states)} {os.path.join(qt_webppl_home, nucleo_json)} " \
+    #           f"{os.path.join(qt_webppl_home, pheno_json)} 1 > {output_filename}"
+    
     command = f"webppl {os.path.join(qt_webppl_home, 'qtbirds-sim.wppl')} --require {os.path.join(dep_home, 'fasta2json')} " \
               f"--require {qt_webppl_home} --require webppl-fs --require {os.path.join(dep_home, 'phywppl/phyjs')} -- " \
-              f"{os.path.join(qt_webppl_home, fasta_file)} {os.path.join(qt_webppl_home, tree_file)} {rates_filename} " \
-              f"{os.path.join(qt_webppl_home, states)} {os.path.join(qt_webppl_home, nucleo_json)} " \
-              f"{os.path.join(qt_webppl_home, pheno_json)} 1 > {output_filename}"
+              f"{fasta_file} {tree_file} {rates_filename} " \
+              f"{states_file} {os.path.join(qt_webppl_home, mol_model.get_filename())} " \
+              f"{os.path.join(qt_webppl_home, pheno_model.get_filename())} 1 > {output_filename}"
+
+    
 
     print(command)
     # Execute the command
@@ -68,7 +85,7 @@ def run_simulation(qt_webppl_home, dep_home, fasta_file="phylo/sample2.fasta",
     print(f"Simulation output saved in {output_filename}")
     return output_filename
 
-def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, total_samples=100, sweep_samples=5000, mthd="smc-apf"):
+def run_inference(tree_data, prior=None, pa=0.5, pb=0.5, norm_q_mol=None, norm_q_char=None, total_samples=100, sweep_samples=5000, mthd="smc-apf", oss=20):
     """
     Run inference on a given tree data file with specified prior distribution and Q-matrices.
 
@@ -79,6 +96,7 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
 
     :param tree_data: The filename of the tree data
     :param prior: A dictionary specifying the prior distribution for lambda, mu, and nu (default values provided)
+    :param p: prior probability of corelation
     :param norm_q_mol: The Q-matrix for molecular data (default Jukes-Cantor matrix provided)
     :param norm_q_char: The Q-matrix for character data (default Markov k=2 matrix provided)
     :param total_samples: Total number of samples to generate (default 100)
@@ -115,39 +133,49 @@ def run_inference(tree_data, prior=None, norm_q_mol=None, norm_q_char=None, tota
     lambda_samples = []
     mu_samples = []
     nu_samples = []
+    p_samples = []
     lweights = []
 
     # Run the model
     print("Matrices set up. Attempting to compile...", os.path.join(qthome, "qtbirds.tppl/qtbirds.tppl"), sweep_samples, mthd)
     with treeppl.Model(filename=os.path.join(qthome, "qtbirds.tppl/qtbirds.tppl"), samples=sweep_samples, method=mthd) as qtbirds:
         print("Model compiled. Running inference with", sweep_samples, "samples/particles and", mthd);
-        while len(lambda_samples) < total_samples:
-            start = timer()
+        start = timer()
+        if (oss < 1):
             res = qtbirds(tree=tree, normQChar=norm_q_char, jChar=jChar, charMessages=startMessages,
                           normQMol=norm_q_mol, jMol=jMol,
                           lamShape=prior['lam']['shape'], lamScale=prior['lam']['scale'],
                           muShape=prior['mu']['shape'], muScale=prior['mu']['scale'],
-                          nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'])
-            oss = optimal_subsample_size(res)
-            end = timer()
-            print("Sweep completed. OSS = ", oss)
-            print("Seconds per sample: ", (end - start)/oss)
-
+                          nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'],
+                          pa=pa, pb=pb)
+            oss = Math.ceil(res.ess())
+        else:
+            oss = oss
+        end = timer()
+        print("Exploratory sweep completed. OSS = ", oss)
+        print("Seconds per sample: ", (end - start)/oss)
+        while len(lambda_samples) < total_samples:
+            res = qtbirds(tree=tree, normQChar=norm_q_char, jChar=jChar, charMessages=startMessages,
+                          normQMol=norm_q_mol, jMol=jMol,
+                          lamShape=prior['lam']['shape'], lamScale=prior['lam']['scale'],
+                          muShape=prior['mu']['shape'], muScale=prior['mu']['scale'],
+                          nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'],
+                          pa=pa, pb=pb)
             # Extract samples and log weights
             subsamples = res.subsample(oss)
-
             #print("Subsamples structure:", subsamples)  # Add this line for debugging
 
             for sample in subsamples:
                 lambda_samples.append(sample[0])  # Extract lambda
                 mu_samples.append(sample[1])      # Extract mu
                 nu_samples.append(sample[2])      # Extract nu
+                p_samples.append(sample[3])     # Extract rho
 
             lweights.extend([res.norm_const] * oss)
 
             print(f"So far {len(lambda_samples)} samples; present run log Z = {res.norm_const}; total var log Z = {np.var(lweights)}")
 
-    return lambda_samples, mu_samples, nu_samples, lweights, tree_label
+    return lambda_samples, mu_samples, nu_samples, p_samples, lweights, tree_label
 
 
 def qtbirds_sim_to_phyjson(tree_data):

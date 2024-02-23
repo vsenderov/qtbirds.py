@@ -23,147 +23,6 @@ def load_data(filename):
     with open(filename) as f:
         return json.load(f, object_hook=object_hook)
 
-def optimal_subsample_size(inference_result):
-    def compress_samples(samples, nweights):
-        unique_samples = {}
-
-        for sample, weight in zip(samples, nweights):
-            sample_tuple = tuple(sample)
-
-            if sample_tuple in unique_samples:
-                unique_samples[sample_tuple] += weight
-            else:
-                unique_samples[sample_tuple] = weight
-
-        compressed_samples = [list(sample) for sample in unique_samples.keys()]
-        compressed_nweights = list(unique_samples.values())
-
-        return compressed_samples, compressed_nweights
-
-    def calculate_ess(nweights):
-        if nweights is None or len(nweights) == 0:
-            return 0
-
-        normalized_weights = nweights / np.sum(nweights)
-        sum_of_squares = np.sum(normalized_weights**2)
-        return 1 / sum_of_squares
-
-    compressed_samples, compressed_nweights = compress_samples(inference_result.samples, inference_result.nweights)
-    ess = calculate_ess(compressed_nweights)
-    return Math.ceil(ess)
-
-
-def find_MAP(values, weights):
-    # Normalize the weights to avoid numerical instability
-    normalized_weights = np.exp(weights - np.max(weights))
-
-    # Create a KDE using the values and normalized weights
-    kde = gaussian_kde(values, weights=normalized_weights)
-
-    # Function to return the negative of KDE (since we want to maximize the KDE)
-    def neg_kde(x):
-        return -kde(x)[0]
-
-    # Find the maximum of the KDE
-    result = minimize_scalar(neg_kde, bounds=(min(values), max(values)), method='bounded')
-
-    if result.success:
-        return result.x
-    else:
-        raise ValueError("Optimization did not converge")
-    
-
-def find_mean(values, weights):
-    # Normalize the weights to sum up to 1 (to handle any scale of weights)
-    normalized_weights = weights / np.sum(weights)
-
-    # Calculate the weighted mean
-    weighted_mean = np.sum(values * normalized_weights)
-
-    return weighted_mean
-
-
-
-
-def compute_hdpi(samples, log_weights, hdpi_prob=0.95):
-    # Convert log weights to linear scale
-    linear_weights = np.exp(log_weights - np.max(log_weights))
-
-    # Perform weighted KDE
-    kde = gaussian_kde(samples, weights=linear_weights)
-
-    # Compute the HDPI
-    # This step involves finding the densest interval containing hdpi_prob of the probability mass
-    # It requires custom implementation, as scipy's gaussian_kde doesn't provide a direct method for this
-    
-    # Determine the range for the grid points
-    sample_std = np.std(samples, ddof=1)  # Sample standard deviation
-    bandwidth = kde.factor * sample_std  # Approximate bandwidth used by KDE
-    grid_min = min(samples) - 3 * bandwidth
-    grid_max = max(samples) + 3 * bandwidth
-
-    # Compute the HDPI
-    grid_points = np.linspace(grid_min, grid_max, 1000)
-
-    kde_values = kde(grid_points)
-    sorted_indices = np.argsort(kde_values)[::-1]  # Sort by density
-
-    cumulative_prob = 0
-    interval_indices = []
-    for idx in sorted_indices:
-        interval_indices.append(idx)
-        cumulative_prob += kde_values[idx] / sum(kde_values)
-        if cumulative_prob >= hdpi_prob:
-            break
-
-    interval_indices = np.sort(interval_indices)
-    hdpi_interval = (grid_points[interval_indices[0]], grid_points[interval_indices[-1]])
-
-    return hdpi_interval
-
-
-def find_min_hdpi_prob(x, samples, log_weights):
-    hdpi_prob = 0.01  # Start with the smallest interval probability
-    max_hdpi_prob = 1.00  # Maximum interval probability
-    resolution = 0.01  # Increment resolution
-
-    while hdpi_prob <= max_hdpi_prob:
-        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=hdpi_prob)
-
-        if current_hdpi[0] <= x <= current_hdpi[1]:
-            # x is within the interval, return the current interval and its probability
-            return hdpi_prob, current_hdpi[0], current_hdpi[1]
-
-        # Increase the interval probability
-        hdpi_prob += resolution
-
-    # If the loop completes without returning, x is not in any interval.
-    # This is unlikely but could happen if x is an outlier or if there's an issue with the data.
-    return None, current_hdpi[0], current_hdpi[1]
-
-
-def find_min_hdpi_prob_bin(x, samples, log_weights):
-    low = 0.01  # Lower bound of the search range
-    high = 1.00  # Upper bound of the search range
-    resolution = 0.01  # Desired resolution for the search
-
-    while high - low > resolution:
-        mid = (high + low) / 2
-        current_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=mid)
-
-        if current_hdpi[0] <= x <= current_hdpi[1]:
-            # x is within the interval, try a smaller interval
-            high = mid
-        else:
-            # x is not within the interval, try a larger interval
-            low = mid
-
-    # Compute the final HDPI at the lower bound of the last search interval
-    # This ensures that the HDPI is the tightest one containing x
-    final_hdpi = compute_hdpi(samples, log_weights, hdpi_prob=high)
-    return high, final_hdpi[0], final_hdpi[1]
-
-
 def save_newick_string(newick, output_file):
     """
     Save the first Newick tree string to disk with a new filename.
@@ -207,3 +66,219 @@ def save_dataframe_to_csv(dataframe, output_file):
 # save_dataframe_to_csv(dataframe, output_file)
 
 # This will save the DataFrame in a CSV file with a filename based on 'output_file'
+
+
+# def compute_probabilities(rho_samples, lweights):
+#     print("got: ", rho_samples, lweights)
+#     # Ensure rho_samples is a numpy array with float64 data type
+#     rho_samples = np.array(rho_samples, dtype=np.float64)
+    
+#     # Use the log-sum-exp trick for numerical stability
+#     max_lweight = np.max(lweights)
+#     weights = np.exp(lweights - max_lweight)
+#     print("weights after exp: ", weights)
+
+#     # Compute the total weight for normalization
+#     total_weight = np.sum(weights)
+#     print("total weight: ", total_weight)
+
+#     # Check for division by zero
+#     if total_weight == 0:
+#         raise ValueError("Total weight is zero, check lweights for large negative values")
+
+#     # Normalize the weights to avoid dividing by zero
+#     weights /= total_weight
+#     print("normalized weights: ", weights)
+
+#     # Check what the comparisons are returning
+#     print("rho_samples == 0.0: ", rho_samples == 0.0)
+#     print("rho_samples == 1.0: ", rho_samples == 1.0)
+
+#     # Compute weighted probabilities for False (0) and True (1)
+#     prob_false = np.sum(weights[rho_samples == 0.0])
+#     prob_true = np.sum(weights[rho_samples == 1.0])
+    
+#     print("returning:", prob_false, prob_true)
+
+#     return prob_false, prob_true
+
+
+def check_os_environment():
+    import os
+
+    # Check if QTHOME is set
+    if 'QTHOME' not in os.environ:
+        print("QTHOME environment variable is not set. Please set it and try again.")
+        exit()
+
+    # Check if MCORE_LIBS is set
+    if 'MCORE_LIBS' not in os.environ:
+        print("MCORE_LIBS environment variable is not set. Please set it and try again.")
+        exit()
+        
+    # Check if QT_WPPL_HOME is set
+    if 'QT_WPPL_HOME' not in os.environ:
+        print("QT_WPPL_HOME environment variable is not set. Please set it and try again.")
+        exit()
+        
+    # Check if QT_DEP_HOME is set
+    if 'QT_DEP_HOME' not in os.environ:
+        print("QT_DEP_HOME environment variable is not set. Please set it and try again.")
+        exit()
+
+    # Split MCORE_LIBS by ':' to get individual clauses
+    clauses = os.environ['MCORE_LIBS'].split(':')
+
+    # Extract the key part before '=' from each clause
+    clause_keys = [clause.split('=')[0] for clause in clauses]
+
+    # Check if clauses for coreppl, stdlib, and treeppl are present
+    required_clauses = ['coreppl', 'stdlib', 'treeppl']
+    missing_clauses = [clause for clause in required_clauses if clause not in clause_keys]
+
+    if missing_clauses:
+        print(f"The following clauses are missing in MCORE_LIBS: {', '.join(missing_clauses)}")
+        exit()
+
+    # If all checks pass, you can proceed with your code
+    print("All environment variable checks passed. You can proceed with your code.")
+    return [os.environ['QTHOME'], os.environ['MCORE_LIBS'], os.environ['QT_WPPL_HOME'], os.environ['QT_DEP_HOME']]
+
+
+
+def qtbirds_sim_to_phyjson(tree_data):
+    def process_node(node, parent_age=0):
+        """
+        Recursive function to process each node and construct the PhyJSON tree structure.
+        :return: A JSON object encoded as PhyJSON.
+        """
+        if node["type"] == "leaf":
+            # Return leaf node information
+            return {
+                "taxon": node["index"],
+                "branch_length": parent_age - node["age"]
+            }
+        else:
+            # Process left and right children
+            left_child = process_node(node["left"], node["age"])
+            right_child = process_node(node["right"], node["age"])
+            return {
+                "children": [left_child, right_child],
+                "branch_length": parent_age - node["age"]
+            }
+
+    def convert_to_phyjson(input_json):
+        phyjson = {
+            "format": "phyjson",
+            "version": "1.0",
+            "taxa": [],
+            "characters": [
+                {"id": "dna", "type": "dna", "aligned": False},
+                {"id": "state", "type": "standard", "symbols": ["black", "white"]}
+            ],
+            "trees": []
+        }
+
+        # Process each tree in the input JSON
+        for item in input_json:
+            tree_root = process_node(item["value"], item["value"]["age"])
+            phyjson["trees"].append({
+                "name": "Generated Tree",
+                "rooted": True,
+                "root": tree_root
+            })
+
+            # Extract taxa information from the leaf nodes
+            extract_taxa(item["value"], phyjson["taxa"])
+
+        return phyjson
+
+    def extract_taxa(node, taxa):
+        """
+        Recursive function to extract taxa from the node.
+        """
+        if node["type"] == "leaf":
+            taxa.append({
+                "id": node["index"],
+                "name": f"Taxon {node['index']}",
+                "characters": {
+                    "dna": node["sequence"],
+                    "state": node["character"]
+                }
+            })
+        elif node["type"] == "node":
+            extract_taxa(node["left"], taxa)
+            extract_taxa(node["right"], taxa)
+
+
+    # Your input JSON
+    with open(tree_data, 'r') as file:
+        input_json = json.load(file)
+        
+    #input_json_str = '[{"value": {...}}]'  # Replace with your actual JSON string
+    #input_json = json.loads(input_json_str)
+    phyjson = convert_to_phyjson(input_json)
+
+    # Convert to JSON string for display
+    phyjson_str = json.dumps(phyjson, indent=4)
+    #print(phyjson_str)
+    return phyjson
+
+
+def phyjson_to_newick(node, taxa_map):
+    """
+    Recursive function to convert a PhyJSON tree node into Newick format.
+    Uses taxa names instead of IDs.
+    :return: An array containing Newick strings.
+    """
+    if 'taxon' in node:
+        # Leaf node - use the taxon name from taxa_map
+        taxon_name = taxa_map.get(node['taxon'], f"Unknown_{node['taxon']}")
+        return f"{taxon_name}:{node['branch_length']}"
+    else:
+        # Internal node
+        children_newick = ','.join([phyjson_to_newick(child, taxa_map) for child in node['children']])
+        return f"({children_newick}):{node['branch_length']}"
+
+def convert_trees_to_newick(phyjson_object):
+    """
+    Convert all trees in the PhyJSON 'trees' array to Newick format.
+    Uses names from the taxa list instead of IDs.
+    """
+    # Create a map of taxon IDs to their names
+    taxa_map = {taxon['id']: taxon['name'] for taxon in phyjson_object['taxa']}
+
+    newick_trees = []
+    for tree in phyjson_object['trees']:
+        newick_tree = phyjson_to_newick(tree['root'], taxa_map) + ';'
+        newick_trees.append(newick_tree)
+    return newick_trees
+
+    # Example usage:
+    # Assuming 'phyjson_object' is your entire PhyJSON object
+    # newick_trees = convert_trees_to_newick(phyjson_object)
+
+    # 'newick_trees' now contains Newick representations using taxon names
+
+
+
+def taxa_to_dataframe(phyjson_object):
+    """
+    Convert the taxa information from PhyJSON format to a pandas DataFrame.
+    """
+    # Extract taxa data
+    taxa_data = [{
+        "name": taxon['name'],
+        "state": taxon['characters']['state'],
+        "dna": taxon['characters']['dna']
+    } for taxon in phyjson_object['taxa']]
+
+    # Create DataFrame
+    df = pd.DataFrame(taxa_data, columns=["name", "state", "dna"])
+    return df
+
+    # Example usage:
+    # Assuming 'phyjson_object' is your entire PhyJSON object
+    # taxa_df = taxa_to_dataframe(phyjson_object)
+
+    # 'taxa_df' is a pandas DataFrame with the taxa information

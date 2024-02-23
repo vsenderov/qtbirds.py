@@ -1,22 +1,5 @@
 import numpy as np
 
-
-def jukes_cantor():
-    """
-    Returns the Jukes-Cantor Q-matrix for molecular data.
-    """
-    return np.array([[-1., 1/3, 1/3, 1/3],
-                     [1/3, -1., 1/3, 1/3],
-                     [1/3, 1/3, -1., 1/3],
-                     [1/3, 1/3, 1/3, -1.]])
-
-def mk2():
-    """
-    Returns the Markov k=2 Q-matrix for character data.
-    """
-    return np.array([[-1., 1.],
-                     [1., -1.]])
-
 def calc_jump_matrix(Q):
     """
     This function takes a rate matrix Q of a continuous-time Markov chain (CTMC)
