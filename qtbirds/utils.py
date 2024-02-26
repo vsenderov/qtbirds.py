@@ -282,3 +282,81 @@ def taxa_to_dataframe(phyjson_object):
     # taxa_df = taxa_to_dataframe(phyjson_object)
 
     # 'taxa_df' is a pandas DataFrame with the taxa information
+
+
+
+
+
+def read_external_data(nexus_file, fasta_file, csv_file):
+    #' Merges the first Newick Tree with the first FASTA string.
+    #' Uses the names column of the CSV file to match the taxonomic names.
+    #' Returns a proper QTNode object
+    
+    from Bio import SeqIO, Phylo
+    import csv
+    import pandas as pd
+    
+    characters = pd.read_csv(csv_file, sep='\t', header=0, index_col=None,  na_values=['NA', '?'])
+    #print(characters)
+    
+    def get_index(name):
+        index = characters.index[characters.species == name].tolist()
+        if index:
+            return index[0]
+        else:
+            print("ERROR: Species not found!")
+            return None
+        
+    def get_character(name):
+        ch = characters.trait[characters.species == name].tolist()
+        if ch:
+            return ch[0]
+        else:
+            print("ERROR: Species not found!")
+            return None
+        
+        
+    # Read the FASTA file for sequence data
+    sequences = {record.id: str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")}
+
+    #print('Sequences', type(sequences))
+    #print(sequences.keys())
+    #print(sequences['Ornithorhynchus_anatinus'])
+    
+    def convert_clade(clade):
+        print('Converting clade...')
+        print(clade)
+        # Base case: If the clade is a leaf (no children), return a QTLeaf object
+        if not clade.clades:
+            print("leaf")
+            print(sequences[clade.name])
+            return QTLeaf(age=clade.branch_length, index=get_index(clade.name), sequence=sequences[clade.name], characterState=get_character(clade.name), character=get_character(clade.name) )
+        # Recursive case: The clade is an internal node
+        else:
+            children = [convert_clade(child) for child in clade.clades]
+            # Assuming the first child is left and the second is right, for simplicity
+            return QTNode(left=children[0], right=children[1], age=clade.branch_length)
+
+    def convert_phylo_tree_to_qt_tree(phylo_tree):
+        root_clade = phylo_tree.root
+        return convert_clade(root_clade)
+    
+    
+    # Read the NEXUS file for the phylogenetic tree and get the first tree
+    # from the generator object
+    phylo_tree  = next(Phylo.parse(nexus_file, "nexus"))
+    #print(phylo_tree)
+    qt_tree = convert_phylo_tree_to_qt_tree(phylo_tree)
+
+    
+    
+    #print(qt_tree)
+    
+    # import matplotlib.pyplot as plt
+    # fig = plt.figure(figsize=(10, 5), dpi=100)  # Adjust as necessary
+    # bph.draw(tree)
+    #     plt.savefig("test.png")
+    # plt.close(fig)
+    
+    return qt_tree
+
