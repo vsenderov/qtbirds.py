@@ -288,75 +288,80 @@ def taxa_to_dataframe(phyjson_object):
 
 
 def read_external_data(nexus_file, fasta_file, csv_file):
-    #' Merges the first Newick Tree with the first FASTA string.
-    #' Uses the names column of the CSV file to match the taxonomic names.
-    #' Returns a proper QTNode object
+    """
+    Merges the first Newick Tree from a NEXUS file with sequence data from a FASTA file,
+    and trait information from a CSV file. It matches sequences and traits to tree leaves 
+    based on species names.
     
+    Parameters:
+    - nexus_file: Path to the NEXUS file containing phylogenetic trees.
+    - fasta_file: Path to the FASTA file containing sequence data for various species.
+    - csv_file: Path to the CSV file containing species names and their traits.
+    
+    Returns:
+    - A QTNode object representing the root of the phylogenetic tree with sequences and 
+      traits integrated.
+    
+    The function reads species traits from the CSV file, matches them with sequence data 
+    from the FASTA file by species name, and integrates this information into the 
+    phylogenetic tree structure obtained from the NEXUS file. The result is a fully 
+    constructed QTNode object that represents the root of the tree with all data 
+    integrated.
+    """
     from Bio import SeqIO, Phylo
-    import csv
     import pandas as pd
-    
-    characters = pd.read_csv(csv_file, sep='\t', header=0, index_col=None,  na_values=['NA', '?'])
-    #print(characters)
+
+    # Read species traits from the CSV file
+    characters = pd.read_csv(csv_file, sep='\t', header=0, index_col=None, na_values=['NA', '?'])
     
     def get_index(name):
-        index = characters.index[characters.species == name].tolist()
+        """Retrieve the index of the species in the CSV file."""
+        index = characters.index[characters['species'] == name].tolist()
         if index:
             return index[0]
-        else:
-            print("ERROR: Species not found!")
-            return None
-        
+        print("ERROR: Species not found!")
+        return None
+
     def get_character(name):
-        ch = characters.trait[characters.species == name].tolist()
+        """Retrieve the character trait of the species from the CSV file."""
+        ch = characters['trait'][characters['species'] == name].tolist()
         if ch:
             return ch[0]
-        else:
-            print("ERROR: Species not found!")
-            return None
-        
-        
-    # Read the FASTA file for sequence data
-    sequences = {record.id: str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")}
+        print("ERROR: Species not found!")
+        return None
 
-    #print('Sequences', type(sequences))
-    #print(sequences.keys())
-    #print(sequences['Ornithorhynchus_anatinus'])
+    # Read the FASTA file for sequence data and match by name
+    sequences = {record.id: str(record.seq) for record in SeqIO.parse(fasta_file, "fasta")}
+    
+    def calculate_node_age(clade):
+        if not clade.clades:
+            return 0.0
+        return clade.branch_length + max(calculate_node_age(child) for child in clade.clades)
     
     def convert_clade(clade):
-        print('Converting clade...')
-        print(clade)
-        # Base case: If the clade is a leaf (no children), return a QTLeaf object
+        """
+        Recursive function to convert a Bio.Phylo clade into QTNode or QTLeaf objects,
+        incorporating sequence and trait information based on species name.
+        """
+        # Base case: clade is a leaf
+        node_age = calculate_node_age(clade)
         if not clade.clades:
-            print("leaf")
-            print(sequences[clade.name])
-            return QTLeaf(age=clade.branch_length, index=get_index(clade.name), sequence=sequences[clade.name], characterState=get_character(clade.name), character=get_character(clade.name) )
-        # Recursive case: The clade is an internal node
+            return QTLeaf(age=0.0, index=get_index(clade.name),
+                          sequence=sequences[clade.name], characterState=get_character(clade.name),
+                          character=get_character(clade.name))
+        # Recursive case: clade is an internal node
         else:
             children = [convert_clade(child) for child in clade.clades]
-            # Assuming the first child is left and the second is right, for simplicity
-            return QTNode(left=children[0], right=children[1], age=clade.branch_length)
+            return QTNode(left=children[0], right=children[1], age=node_age)
 
     def convert_phylo_tree_to_qt_tree(phylo_tree):
+        """Converts the root clade of a Bio.Phylo tree to a QTNode tree."""
         root_clade = phylo_tree.root
         return convert_clade(root_clade)
-    
-    
-    # Read the NEXUS file for the phylogenetic tree and get the first tree
-    # from the generator object
-    phylo_tree  = next(Phylo.parse(nexus_file, "nexus"))
-    #print(phylo_tree)
+
+    # Read the first phylogenetic tree from the NEXUS file
+    phylo_tree = next(Phylo.parse(nexus_file, "nexus"))
+    # Convert the phylogenetic tree to a QTNode tree
     qt_tree = convert_phylo_tree_to_qt_tree(phylo_tree)
 
-    
-    
-    #print(qt_tree)
-    
-    # import matplotlib.pyplot as plt
-    # fig = plt.figure(figsize=(10, 5), dpi=100)  # Adjust as necessary
-    # bph.draw(tree)
-    #     plt.savefig("test.png")
-    # plt.close(fig)
-    
     return qt_tree
-
