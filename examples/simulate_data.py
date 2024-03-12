@@ -8,7 +8,7 @@ from scipy.stats import gamma
 qthome, mcore_libs, qt_webppl_home, dep_home = qb.check_os_environment()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-fasta_file=os.path.join(script_dir, 'data' , 'sample2.fasta') # DNA at root of tree
+fasta_file=os.path.join(script_dir, 'data' , 'sample.fasta') # DNA at root of tree
 tree_file=os.path.join(script_dir, 'data', 'jeremy-crbd.tre.phyjson') # Actual tree
 states=os.path.join(script_dir, 'data' , '2state.json') # Possible states
 
@@ -56,14 +56,17 @@ for simulation in range(N):
     
     for inference in range(M):
         # Run inference
-        tree_data = output_file  # Use the output from the simulation
+        data = qb.load_data(output_file)  # Use the output from the simulation
+        tree = data[0]['value']
+        tree_label = f"tree_{output_file.split('_')[-1].split('.')[0]}"
+        
         prior = {'lam': {'shape': shape, 'scale': scale}, 
                  'mu': {'shape': shape, 'scale': 0.000000001}, 
                  'nu': {'shape': shape, 'scale': 0.000000001}}
 
-        lambda_samples, mu_samples, nu_samples, lweights, tree_id = qb.run_inference(
-            tree_data, prior=prior, norm_q_mol=norm_q_mol, norm_q_char=norm_q_char, 
-            total_samples=total_samples, sweep_samples=particles)
+        lambda_samples, mu_samples, nu_samples, p_samples, lweights, tree_id = qb.run_inference(
+            tree, prior=prior, norm_q_mol=norm_q_mol, norm_q_char=norm_q_char, 
+            total_samples=total_samples, sweep_samples=particles, oss=-1)
 
         # Calculate MAP for lambda, mu, and nu
         #w = np.exp(lweights - np.max(lweights))
