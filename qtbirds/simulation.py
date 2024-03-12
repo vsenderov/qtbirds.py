@@ -171,7 +171,6 @@ def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_
                           nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'],
                           pa=pa, pb=pb)
             # Extract samples and log weights
-            print(res.norm_const)
             subsamples = res.subsample(oss)
             #print("Subsamples structure:", subsamples)  # Add this line for debugging
 
