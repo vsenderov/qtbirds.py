@@ -3,14 +3,18 @@ import json
 import uuid
 import os
 import numpy as np
+import pandas as pd
+import math as Math
+import treeppl
+import treeppl_utils as tu
 from timeit import default_timer as timer
+from typing import Optional, Dict, Tuple
+
+
 from .utils import load_data
 from .linear_algebra import calc_jump_matrix, possible_message_states
 from .models import PhenotypicModel, MolecularModel
-import treeppl
-import treeppl_utils as tu
-import pandas as pd
-import math as Math
+from .QTTree import QTNode
 
 def run_simulation( qt_webppl_home
                   , dep_home
@@ -203,3 +207,165 @@ def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_
     return lambda_samples, mu_samples, nu_samples, p_samples, lweights, tree_label
 
 
+
+
+def run_inference_multithreaded(
+    tree: QTNode,
+    label: str = "No label",
+    prior: Optional[Dict[str, Dict[str, float]]] = None,
+    norm_q_mol: Optional[np.ndarray] = None,
+    norm_q_char: Optional[np.ndarray] = None,
+    total_samples: int = 100,
+    particles: int = 5000,
+    mthd: str = "smc-apf",
+    sweep_samples: int = 1,
+    numthreads: int = 6,
+    outputf: str = "output-inference.csv"
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
+    
+    """
+    Run inference on a given tree data file with specified prior distribution and Q-matrices.
+    
+    :param prior: The hyper-parameters of the Gamma distribution for λ, μ, ν (Gamma) 
+    and p (Beta) e.g.
+
+        {
+            'lam': {'shape': 1.0, 'scale': 0.5},
+            'mu': {'shape': 1.0, 'scale': 0.5},
+            'nu': {'shape': 1.0, 'scale': 0.5},
+            'p': {'pa': 0.5, 'pb': 0.5}
+        }
+    
+    :param norm_q_mol: The normalized Q-matrix for the molecular process 
+        (default Jukes-Cantor matrix provided)
+    
+    :param norm_q_char: The normalized Q-matrix for the phenotypic process
+        (default binary Mk matrix provided)
+        
+    TODO mthd should be an Enum
+        
+    :return: Samples from λ, μ, ν, p and the label of the tree
+    """
+    
+    print("Running multithreaded inference with " + str(numthreads) + " threads...")
+    
+    if prior is None:
+        print("default prior")
+        prior = {
+            'lam': {'shape': 1.0, 'scale': 0.5},
+            'mu': {'shape': 1.0, 'scale': 0.5},
+            'nu': {'shape': 1.0, 'scale': 0.5},
+            'p': {'pa': 0.5, 'pb': 0.5}
+            }
+        
+    if norm_q_mol is None:
+        print("default molecular model: JK")
+        norm_q_mol = np.array( [[-1., 1/3, 1/3, 1/3],
+                                [1/3, -1., 1/3, 1/3],
+                                [1/3, 1/3, -1., 1/3],
+                                [1/3, 1/3, 1/3, -1.]])
+        
+    if norm_q_char is None:
+        print("default phenotype model: binary Mk")
+        norm_q_char = np.array([[-1., 1.],
+                                [1., -1.]])
+
+    jMol = calc_jump_matrix(norm_q_mol)
+    jChar = calc_jump_matrix(norm_q_char)
+    startMessages = possible_message_states(norm_q_char.shape[0])
+
+    lambda_samples = []
+    mu_samples = []
+    nu_samples = []
+    p_samples = []
+    lweights = []
+
+    tppl_src = os.environ.get('MCORE_LIBS') # Extracting the part after "treeppl="
+    tppl_path = tppl_src.split('treeppl=')[-1] if 'treeppl=' in tppl_src else None
+    qt = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
+    
+    print("Matrices set up. Attempting to compile: ", qt, particles, mthd)
+    
+    # TODO -n <subsample size> (single minus)
+    with treeppl.Model(filename=qt, samples=particles, method=mthd, subsample=True) as qtbirds:
+        print("Model compiled. Running inference with", particles, "samples/particles and", mthd);
+
+        if (sweep_samples < 1):
+            print("Exploratory sweep.")
+            start = timer()
+            res = qtbirds(  tree=tree, normQChar=norm_q_char, jChar=jChar, charMessages=startMessages,
+                            normQMol=norm_q_mol, jMol=jMol,
+                            lamShape=prior['lam']['shape'], lamScale=prior['lam']['scale'],
+                            muShape=prior['mu']['shape'], muScale=prior['mu']['scale'],
+                            nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'],
+                            pa=prior['p']['pa'],
+                            pb=prior['p']['pb']
+                            )
+            sweep_samples = Math.ceil(tu.ess(res))
+            end = timer()
+            print("Exploratory sweep completed. OSS = ", sweep_samples)
+            print("Seconds per sample: ", (end - start)/sweep_samples)
+        else:
+            sweep_samples = sweep_samples
+        
+        while len(lambda_samples) < total_samples:
+            #TODO https://chat.openai.com/share/6745c36f-591f-4629-b961-eddd098bd19a
+            
+            threads = []
+            results = [None] * numthreads
+            
+            for _ in range(numthreads):
+                thread = tu.ThreadWithReturnValue(  target=qtbirds,
+                                                    kwargs={
+                                                        'tree': tree,
+                                                        'normQChar': norm_q_char,
+                                                        'jChar': jChar,
+                                                        'charMessages': startMessages,
+                                                        'normQMol': norm_q_mol,
+                                                        'jMol': jMol,
+                                                        'lamShape': prior['lam']['shape'],
+                                                        'lamScale': prior['lam']['scale'],
+                                                        'muShape': prior['mu']['shape'],
+                                                        'muScale': prior['mu']['scale'],
+                                                        'nuShape': prior['nu']['shape'],
+                                                        'nuScale': prior['nu']['scale'],
+                                                        'pa': prior['p']['pa'],
+                                                        'pb': prior['p']['pb'] }
+                                                    )
+                threads.append(thread)
+                thread.start()
+            
+            for i, thread in enumerate(threads):
+                if i < numthreads:
+                    results[i] = thread.join()  # Wait for the thread to complete and get the return value
+                    #os.sleep(200)
+                    subsamples = (results[i]).getsample()
+                    #subsamples = (results[i]).subsample(1)
+                    for sample in subsamples:
+                        lambda_samples.append(sample[0])  # Extract lambda
+                        mu_samples.append(sample[1])      # Extract mu
+                        nu_samples.append(sample[2])      # Extract nu
+                        p_samples.append(sample[3])     # Extract rho
+                        
+                    lweights.extend([results[i].norm_const] * sweep_samples)
+                        
+                        #print(mu_samples)
+                        #print(nu_samples)
+                        #print(p_samples)
+                        #print(lweights)
+
+                else:
+                    thread.join()  # Make sure to join remaining threads even if their results are not collected
+            
+            data_frame = pd.DataFrame({
+                'lambda_samples': lambda_samples,
+                'mu_samples': mu_samples,
+                'nu_samples': nu_samples,
+                'p_samples': p_samples,
+                'lweights': lweights
+            })
+            data_frame.to_csv("output_" + label + ".csv", index=False)
+            
+            print(f"So far {len(lambda_samples)} samples; var log Z = {np.var(lweights)}")
+
+    return lambda_samples, mu_samples, nu_samples, p_samples, lweights, label
