@@ -255,6 +255,11 @@ def qt_mcmc(
                 """
                 Moving the hidden state without touching the vars
                 This is TURNED OFF right now as we change Z in case 3
+                
+                perhaps we can do case 3 backwards:
+                    - we propose a new value  Z -> Z'
+                    - then, we try to accept a new v'|Z'
+                    - this way we changed Z only slightly
                 """
                 M_new = copy.deepcopy(M)
                 ix:int = random.randint(0, Z_new.sequence_length - 1)
