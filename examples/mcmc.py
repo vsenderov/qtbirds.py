@@ -1,4 +1,5 @@
 import qtbirds as qb
+import pandas as pd
 """
 This example runs the Python-native MCMC inference on a Q-T data file.
 
@@ -62,7 +63,14 @@ lambda_samples, mu_samples, nu_samples, p_samples = qb.qt_mcmc(tree=tree,
             burnin=burnin,
             chains=1)
 
-print(lambda_samples)
+# Create a DataFrame
+df = pd.DataFrame({
+    'Lambda': lambda_samples,
+    'Mu': mu_samples,
+    'Nu': nu_samples
+})
+
+print(df)
 
 #lambda_samples, mu_samples, nu_samples, p_samples, lweights, tree_id = qb.run_inference(
 #            tree, prior=prior, norm_q_mol=norm_q_mol, norm_q_char=norm_q_char, 
