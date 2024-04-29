@@ -231,9 +231,9 @@ def qt_mcmc(
                 
                 # Here is the full expression:
                 #
-                # L(λ, μ, ν', Ζ') p(Z'|ν') p(v') q(μ|μ')
+                # L(λ, μ, ν', Ζ') p(Z'|ν') p(v') q(ν| ν')
                 # -------------  ------ ---- ----
-                # L(λ, μ, ν, Ζ)  p(Z|ν) p(ν)  q(μ'|μ)
+                # L(λ, μ, ν, Ζ)  p(Z|ν) p(ν)  q(ν'|ν )
                 # 
                 # since resampled from the prior q(ν|ν') = p(ν)
                 # so the move cancels with the prior
