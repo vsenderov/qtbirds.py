@@ -21,9 +21,9 @@ python3 examples/mcmc.py examples/data/crbd-1n-1p-44t.json
 shape, scale = 3.0, 0.1
 mol_model=qb.MolecularModel.JC69
 pheno_model=qb.PhenotypicModel.MK_2
-samples = 10000
-burnin = 1000
-thinning = 1
+samples = 800
+burnin = 20000
+thinning = 1000
 chains = 1
 
 ###

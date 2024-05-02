@@ -23,7 +23,7 @@ def qt_mcmc(
             samples: int = 100,
             burnin: int = 5000,
             thinning: int = 1000,
-            random: bool = True,
+            random_scan: bool = True,
             chains: int = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
     """
@@ -140,7 +140,7 @@ def qt_mcmc(
         header = ['lambda', 'mu', 'nu', 'p']
         writer.writerow(header)
         print("Samples are continuously saved to " + filename)
-        print("Using random scan: " + random)
+        print("Using random scan: " + str(random_scan))
         
         # Now the file is ready for further data writing.
         # For example:
@@ -148,7 +148,7 @@ def qt_mcmc(
     
         total = samples*thinning + burnin
         for i in range(total):
-            if random:
+            if random_scan:
                 case = random.randint(0, 2) # Random scan Metropolis-Hastings
             else:
                 case = (case + 1) % 3 # Component-wise updating 
