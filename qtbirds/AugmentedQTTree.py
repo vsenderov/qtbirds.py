@@ -189,8 +189,11 @@ class AugmentedQTNode(QTNode):
         """
         u = 1. / self.sequence_length
                 
-        left_ll_branch = sum(map(lambda s: np.log(poisson.pmf(s, nu*u*(self.age-self.left.age))), self.s_jumps_left))
-        right_ll_branch = sum(map(lambda s: np.log(poisson.pmf(s, nu*u*(self.age-self.right.age))), self.s_jumps_right))
+        #left_ll_branch = sum(map(lambda s: np.log(poisson.pmf(s, nu*u*(self.age-self.left.age))), self.s_jumps_left))
+        #right_ll_branch = sum(map(lambda s: np.log(poisson.pmf(s, nu*u*(self.age-self.right.age))), self.s_jumps_right))
+        # Suggestion: if self.s_jumps_left is a np.ndarray, the poisson.pmf can operate on it directly without map
+        left_ll_branch = np.sum(np.log(poisson.pmf(self.s_jumps_left, nu*u*(self.age - self.left.age))))
+        right_ll_branch = np.sum(np.log(poisson.pmf(self.s_jumps_right, nu*u*(self.age - self.right.age))))
         
         # Recursion
         left_ll_tree = self.left.pmf(nu) if isinstance(self.left, QTNode) else 0.0

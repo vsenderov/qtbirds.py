@@ -21,8 +21,9 @@ python3 examples/mcmc.py examples/data/crbd-1n-1p-44t.json
 shape, scale = 3.0, 0.1
 mol_model=qb.MolecularModel.JC69
 pheno_model=qb.PhenotypicModel.MK_2
-samples = 100
-burnin = 100
+samples = 10000
+burnin = 1000
+thinning = 1
 chains = 1
 
 ###
@@ -54,14 +55,14 @@ label = f"tree_{output_file.split('_')[-1].split('.')[0]}"
 norm_q_mol = mol_model.get_q_matrix()
 norm_q_char = pheno_model.get_q_matrix()
 
-lambda_samples, mu_samples, nu_samples, p_samples = qb.qt_mcmc(tree=tree,
-            label=label,
+lambda_samples, mu_samples, nu_samples, p_samples, filename = qb.qt_mcmc(tree=tree,
+            #label=label,
             prior=prior,
             norm_q_mol=norm_q_mol,
             norm_q_char=norm_q_char,
             samples=samples,
             burnin=burnin,
-            chains=1)
+            thinning=thinning)
 
 # Create a DataFrame
 df = pd.DataFrame({
@@ -71,6 +72,16 @@ df = pd.DataFrame({
 })
 
 print(df)
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Assuming your DataFrame (df) is defined
+df.plot(kind='line', subplots=True)  # Plot traces for each parameter
+plt.savefig("mcmc_traces.png")  # Save the plot as an image
+
+
 
 #lambda_samples, mu_samples, nu_samples, p_samples, lweights, tree_id = qb.run_inference(
 #            tree, prior=prior, norm_q_mol=norm_q_mol, norm_q_char=norm_q_char, 
