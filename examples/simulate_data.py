@@ -9,7 +9,7 @@ qthome, mcore_libs, qt_webppl_home, dep_home = qb.check_os_environment()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 fasta_file=os.path.join(script_dir, 'data' , 'sample.fasta') # DNA at root of tree
-tree_file=os.path.join(script_dir, 'data', 'jeremy-crbd.tre.phyjson') # Actual tree
+tree_file=os.path.join(script_dir, 'data', 'small.phyjson') # Actual tree
 states=os.path.join(script_dir, 'data' , '2state.json') # Possible states
 
 print(fasta_file, tree_file, states)

@@ -277,7 +277,10 @@ def qt_mcmc(
                         a = random.uniform(0, 1)
                         A = l_new - l + nu_new_logw - nu_logw + Z_new.pmf(nu_new) - Z.pmf(nu)
                         
-                        if A > np.log(a): # accept    
+                        #print("nu_new, nu, l_new, l, nu_new_logw, nu_logw, Z_new.pmf(nu_new), Z.pmf(nu):\n", nu_new, nu, l_new, l, nu_new_logw, nu_logw, Z_new.pmf(nu_new), Z.pmf(nu))
+                        
+                        if A > np.log(a): # accept
+                            #print("accepted")
                             if i >= burnin:
                                 accept_count_nu += 1
                                 
@@ -287,6 +290,7 @@ def qt_mcmc(
                             nu = nu_new
                             nu_logw = nu_new_logw
                         else:
+                            #print("rejected")
                             if i >= burnin:
                                 reject_count_nu += 1
                             

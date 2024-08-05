@@ -167,6 +167,24 @@ class AugmentedQTNode(QTNode):
         new_node = cls(age=T.age, left=left, right=right, s_jumps_left=s_jumps_left, s_jumps_right=s_jumps_right)
         return new_node
     
+    @classmethod
+    def custom_rvs(cls, T: QTNode, n: int):
+        """
+        Sample an AugmentedQTNode
+        sets the jumps to predefined int
+        Z ~ q(Z | T, ν)
+        """
+        # Sample simultaneous jumps to the left and to the right of the root of T        
+        s_jumps_left: List[int] = cls.custom_augment_branch(T.age - T.left.age, n, T.sequence_length) 
+        s_jumps_right: List[int] = cls.custom_augment_branch(T.age - T.right.age, n, T.sequence_length)
+
+        # Recursion
+        left = cls.custom_rvs(T.left, n) if isinstance(T.left, QTNode) else T.left
+        right = cls.custom_rvs(T.right, n) if isinstance(T.right, QTNode) else T.right
+        
+        new_node = cls(age=T.age, left=left, right=right, s_jumps_left=s_jumps_left, s_jumps_right=s_jumps_right)
+        return new_node
+    
     def mutate(self, nu:float, ix:int):
         """
         Randomly resamples one lineage
@@ -207,7 +225,17 @@ class AugmentedQTNode(QTNode):
         rate = branch_length * nu * u
 
         def augment(_):
-            s_jumps = poisson.rvs(rate)            
+            s_jumps = poisson.rvs(rate)    
+            return s_jumps
+
+        results = map(augment, range(sequence_length))
+        return list(results)
+    
+    @staticmethod
+    def custom_augment_branch(branch_length: float, n: float, sequence_length: int) -> List[int]:
+
+        def augment(_):
+            s_jumps = n            
             return s_jumps
 
         results = map(augment, range(sequence_length))

@@ -63,7 +63,7 @@ def run_simulation( qt_webppl_home
         json.dump(rates, file)
 
     # Generate unique output filename
-    output_filename = f"output-{unique_id}.json"
+    output_filename = f"tree_{unique_id}.json"
 
     # Construct the command using os.path.join for robust path handling
     # command = f"webppl {os.path.join(qt_webppl_home, 'qtbirds-sim.wppl')} --require {os.path.join(dep_home, 'fasta2json')} " \
@@ -90,7 +90,7 @@ def run_simulation( qt_webppl_home
     print(f"Simulation output saved in {output_filename}")
     return output_filename
 
-def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_q_mol=None, norm_q_char=None, total_samples=100, sweep_samples=5000, mthd="smc-apf", oss=20, outputf="output.csv"):
+def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_q_mol=None, norm_q_char=None, total_samples=100, sweep_samples=5000, mthd="smc-apf", oss=20, outputf="output.csv", custominf=None):
     """
     Run inference on a given tree data file with specified prior distribution and Q-matrices.
 
@@ -111,6 +111,10 @@ def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_
     :return: A tuple containing samples of lambda, mu, nu, the weights, and the tree identifier
     """
     print("Running inference...")
+
+    if custominf == None:
+        custominf = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
+
     # Environment extraction
     qthome = os.environ.get('QTHOME')
     if not qthome:
@@ -150,8 +154,8 @@ def run_inference(tree, tree_label="No label", prior=None, pa=0.5, pb=0.5, norm_
     # Extracting the part after "treeppl="
     tppl_path = tppl_src.split('treeppl=')[-1] if 'treeppl=' in tppl_src else None
     
-    print("Matrices set up. Attempting to compile...", os.path.join(tppl_path, "models/pheno-mol/qt.tppl"), sweep_samples, mthd)
-    with treeppl.Model(filename=os.path.join(tppl_path, "models/pheno-mol/qt.tppl"), samples=sweep_samples, method=mthd) as qtbirds:
+    print("Matrices set up. Attempting to compile...", custominf, sweep_samples, mthd)
+    with treeppl.Model(filename=custominf, samples=sweep_samples, method=mthd) as qtbirds:
         print("Model compiled. Running inference with", sweep_samples, "samples/particles and", mthd);
         start = timer()
         if (oss < 1):
@@ -220,7 +224,8 @@ def run_inference_multithreaded(
     mthd: str = "smc-apf",
     sweep_samples: int = 1,
     numthreads: int = 6,
-    outputf: str = "output-inference.csv"
+    outputf: str = "output-inference.csv",
+    qt: Optional[str] = None
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
     
     """
@@ -282,7 +287,8 @@ def run_inference_multithreaded(
 
     tppl_src = os.environ.get('MCORE_LIBS') # Extracting the part after "treeppl="
     tppl_path = tppl_src.split('treeppl=')[-1] if 'treeppl=' in tppl_src else None
-    qt = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
+    if qt is None:
+        qt = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
     
     print("Matrices set up. Attempting to compile: ", qt, particles, mthd)
     
@@ -369,3 +375,314 @@ def run_inference_multithreaded(
             print(f"So far {len(lambda_samples)} samples; var log Z = {np.var(lweights)}")
 
     return lambda_samples, mu_samples, nu_samples, p_samples, lweights, label
+
+
+###
+# MCMC Inference with TreePPL
+###
+
+def run_mcmc_inference  ( tree: QTNode
+                        , label: str = "no-label"
+                        , prior: Optional[Dict[str, Dict[str, float]]] = None
+                        , norm_q_mol: Optional[np.ndarray] = None
+                        , norm_q_char: Optional[np.ndarray] = None
+                        , samples: int = 100
+                        , burnin: int = 5000
+                        , thinning: int = 1000
+                        , chains: int = None
+                        , custominf: int = None
+                        , cps: str = "partial"
+                        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
+    print("TreePPL MCMC inference...")
+    
+    ###
+    # Housekeeping
+    ###
+    if prior is None:
+        print("Using default prior:")
+        prior = {
+            'lam': {'shape': 1.0, 'scale': 0.5},
+            'mu': {'shape': 1.0, 'scale': 0.5},
+            'nu': {'shape': 1.0, 'scale': 0.5},
+            'p': {'pa': 0.5, 'pb': 0.5}
+        }
+    else:
+        print("Using provided prior:")
+        
+    print(prior)
+        
+    if norm_q_mol is None:
+        print("Using default molecular model (JC):")
+        norm_q_mol = np.array( [[-1., 1/3, 1/3, 1/3],
+                                [1/3, -1., 1/3, 1/3],
+                                [1/3, 1/3, -1., 1/3],
+                                [1/3, 1/3, 1/3, -1.]])
+    else:
+        print("Using provided molecular model:")
+        
+    print(norm_q_mol)
+        
+    if norm_q_char is None:
+        print("Using default phenotype model (binary Mk):")
+        norm_q_char = np.array([[-1.,  1.],
+                                [ 1., -1.]])
+    else:
+        print("Using provided phenotype model:")
+        
+    print(norm_q_char)
+
+    # Environment extraction
+    qthome = os.environ.get('QTHOME')
+    if not qthome:
+        raise ValueError("The QTHOME environment variable is not set.")
+
+    # Calculate jump matrices
+    jMol = calc_jump_matrix(norm_q_mol)
+    jChar = calc_jump_matrix(norm_q_char)
+
+    # Define startMessages based on the shape of norm_q_char
+    startMessages = possible_message_states(norm_q_char.shape[0])
+   
+
+    # Initialize lists to store samples
+    lambda_samples = []
+    mu_samples = []
+    nu_samples = []
+    p_samples = []
+    lweights = []
+
+    # Run the model
+    tppl_src = os.environ.get('MCORE_LIBS')
+    # Extracting the part after "treeppl="
+    tppl_path = tppl_src.split('treeppl=')[-1] if 'treeppl=' in tppl_src else None
+    
+    if custominf == None:
+        custominf = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
+    
+    print("Matrices set up. Attempting to compile...", custominf)
+
+    total = samples*thinning + burnin
+
+    
+    with treeppl.Model(filename=custominf, method="mcmc-lightweight", align=True, samples=total) as qtbirds:
+        print   ( "TreePPL MCMC model compiled. Running inference for a total of "
+                , total
+                , "samples, including burn-in and thinning"
+                )
+
+        res = qtbirds(tree=tree, normQChar=norm_q_char, jChar=jChar, charMessages=startMessages,
+                          normQMol=norm_q_mol, jMol=jMol,
+                          lamShape=prior['lam']['shape'], lamScale=prior['lam']['scale'],
+                          muShape=prior['mu']['shape'], muScale=prior['mu']['scale'],
+                          nuShape=prior['nu']['shape'], nuScale=prior['nu']['scale'],
+                          pa=prior['p']['pa'], pb=prior['p']['pb'])
+        
+
+
+        # Extracting values
+        lambda_samples = [sample[0] for sample in res.samples]
+        mu_samples = [sample[1] for sample in res.samples]
+        nu_samples = [sample[2] for sample in res.samples]
+        p_samples = [sample[3] for sample in res.samples]
+        weights = res.weights  #
+        
+        import pandas as pd
+
+        # Assuming the initialization of subsamples, lambda_samples, mu_samples, nu_samples, p_samples, and lweights is done before this snippet.
+
+        # Create a data frame with the specified columns
+        data_frame = pd.DataFrame({
+            'lambda_samples': lambda_samples,
+            'mu_samples': mu_samples,
+            'nu_samples': nu_samples,
+            'p_samples': p_samples,
+            'lweights': weights
+        })[burnin::thinning]
+
+        # Write the data frame to the file named outputf, overwrite if it exists
+        data_frame.to_csv("mcmc_tppl_output_" + label + ".csv", index=False)
+
+    return lambda_samples, mu_samples, nu_samples, p_samples, label
+
+
+
+###
+# MCMC Inference with TreePPL
+###
+
+def run_mcmc_inference_multithreaded  ( tree: QTNode
+                        , label: str = "no-label"
+                        , prior: Optional[Dict[str, Dict[str, float]]] = None
+                        , norm_q_mol: Optional[np.ndarray] = None
+                        , norm_q_char: Optional[np.ndarray] = None
+                        , samples: int = 100
+                        , burnin: int = 0
+                        , thinning: int = 1
+                        , chains: int = 1
+                        , custominf: int = None
+                        , gprob:float = 0.1
+                        , drift:float = 0.01
+                        , cps:str = "partial"
+                        #) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
+                        ) -> str:
+    print("TreePPL MCMC inference...")
+    
+    ###
+    # Housekeeping
+    ###
+    if prior is None:
+        print("Using default prior:")
+        prior = {
+            'lam': {'shape': 1.0, 'scale': 0.5},
+            'mu': {'shape': 1.0, 'scale': 0.5},
+            'nu': {'shape': 1.0, 'scale': 0.5},
+            'p': {'pa': 0.5, 'pb': 0.5}
+        }
+    else:
+        print("Using provided prior:")
+        
+    print(prior)
+        
+    if norm_q_mol is None:
+        print("Using default molecular model (JC):")
+        norm_q_mol = np.array( [[-1., 1/3, 1/3, 1/3],
+                                [1/3, -1., 1/3, 1/3],
+                                [1/3, 1/3, -1., 1/3],
+                                [1/3, 1/3, 1/3, -1.]])
+    else:
+        print("Using provided molecular model:")
+        
+    print(norm_q_mol)
+        
+    if norm_q_char is None:
+        print("Using default phenotype model (binary Mk):")
+        norm_q_char = np.array([[-1.,  1.],
+                                [ 1., -1.]])
+    else:
+        print("Using provided phenotype model:")
+        
+    print(norm_q_char)
+
+    # Environment extraction
+    qthome = os.environ.get('QTHOME')
+    if not qthome:
+        raise ValueError("The QTHOME environment variable is not set.")
+
+    # Calculate jump matrices
+    jMol = calc_jump_matrix(norm_q_mol)
+    jChar = calc_jump_matrix(norm_q_char)
+
+    # Define startMessages based on the shape of norm_q_char
+    startMessages = possible_message_states(norm_q_char.shape[0])
+   
+
+    # Initialize lists to store samples
+    all_lambda_samples = []
+    all_mu_samples = []
+    all_nu_samples = []
+    all_p_samples = []
+    all_weights = []
+
+    # Run the model
+    tppl_src = os.environ.get('MCORE_LIBS')
+    # Extracting the part after "treeppl="
+    tppl_path = tppl_src.split('treeppl=')[-1] if 'treeppl=' in tppl_src else None
+    
+    if custominf == None:
+        custominf = os.path.join(tppl_path, "models/pheno-mol/qt.tppl")
+    
+    print("Matrices set up. Attempting to compile...", custominf)
+
+    total = samples*thinning + burnin
+
+
+    # --mcmc-lw-gprob <value>            The probability of performing a global MH 
+    #                                 step (non-global means only modify a single
+    #                                 sample in the previous trace). Default: 
+    #                                 0.1.
+    #
+    
+    with treeppl.Model(filename=custominf, method="mcmc-lightweight", align=True, cps=cps, drift=drift, samples=total, mcmc_lw_gprob=gprob) as qtbirds:
+    #with treeppl.Model(filename=custominf, method="mcmc-lightweight", align=True, cps='full', samples=total, mcmc_lw_gprob=gprob) as qtbirds:
+        print   ( "TreePPL MCMC model compiled. Running multithread MCMC inference for a total of"
+                , total
+                , "samples, including burn-in and thinning"
+                )
+
+        threads = []
+        results = [None] * chains
+        
+        for _ in range(chains):
+            thread = tu.ThreadWithReturnValue(
+                target=qtbirds,
+                kwargs={
+                    'tree': tree,
+                    'normQChar': norm_q_char,
+                    'jChar': jChar,
+                    'charMessages': startMessages,
+                    'normQMol': norm_q_mol,
+                    'jMol': jMol,
+                    'lamShape': prior['lam']['shape'],
+                    'lamScale': prior['lam']['scale'],
+                    'muShape': prior['mu']['shape'],
+                    'muScale': prior['mu']['scale'],
+                    'nuShape': prior['nu']['shape'],
+                    'nuScale': prior['nu']['scale'],
+                    'pa': prior['p']['pa'],
+                    'pb': prior['p']['pb']
+                    }
+                )
+            
+            threads.append(thread)
+            thread.start()
+        
+
+        for i, thread in enumerate(threads):
+            if i < chains:
+                results[i] = thread.join()  # Wait for the thread to complete and get the return value        
+
+                # Extracting values
+                lambda_samples = [sample[0] for sample in results[i].samples]
+                mu_samples = [sample[1] for sample in results[i].samples]
+                nu_samples = [sample[2] for sample in results[i].samples]
+                p_samples = [sample[3] for sample in results[i].samples]
+                weights = results[i].weights  #
+                
+                # Apply burnin and thinning
+                lambda_samples = lambda_samples[burnin::thinning]
+                mu_samples = mu_samples[burnin::thinning]
+                nu_samples = nu_samples[burnin::thinning]
+                p_samples = p_samples[burnin::thinning]
+                weights = weights[burnin::thinning]
+                
+                # Append to the global lists
+                all_lambda_samples.extend(lambda_samples)
+                all_mu_samples.extend(mu_samples)
+                all_nu_samples.extend(nu_samples)
+                all_p_samples.extend(p_samples)
+                all_weights.extend(weights)
+                
+                # Create a data frame with the specified columns
+                import pandas as pd
+                data_frame = pd.DataFrame({
+                    'lambda_samples': lambda_samples,
+                    'mu_samples': mu_samples,
+                    'nu_samples': nu_samples,
+                    'p_samples': p_samples,
+                    'lweights': weights
+                })
+
+                # Write the data frame to the file named outputf, overwrite if it exists
+                data_frame.to_csv("mcmc_tppl_output_" + label + '-' + str(i) + ".csv", index=False)
+                
+            else:
+                thread.join()  # Make sure to join remaining threads even if their results are not collected
+        
+    # Convert lists to numpy arrays
+    final_lambda_samples = np.array(all_lambda_samples)
+    final_mu_samples = np.array(all_mu_samples)
+    final_nu_samples = np.array(all_nu_samples)
+    final_p_samples = np.array(all_p_samples)
+    final_weights = np.array(all_weights)
+
+    return final_lambda_samples, final_mu_samples, final_nu_samples, final_p_samples, label
