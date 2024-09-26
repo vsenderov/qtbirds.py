@@ -155,6 +155,7 @@ def run_mcmc_experiment_real_data( nexus_file: str
                                 , drift: float
                                 , gprob: float
                                 , numthreads: int # chain
+                                , method: str
                                 , ppl: str
                                 , cps: str):
     # PRINT
@@ -206,6 +207,7 @@ def run_mcmc_experiment_real_data( nexus_file: str
                 chains=numthreads,
                 gprob=gprob,
                 custominf=ppl,
+                method=method,
                 cps=cps)                       
         elapsed_time = time.time() - start_time
         

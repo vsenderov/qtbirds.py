@@ -314,12 +314,31 @@ def read_external_data(nexus_file, fasta_file, csv_file):
     # Read species traits from the CSV file
     characters = pd.read_csv(csv_file, sep='\t', header=0, index_col=None, na_values=['NA', '?'])
     
+    # def get_index(name):
+    #     """Retrieve the index of the species in the CSV file."""
+    #     index = characters.index[characters['species'] == name].tolist()
+    #     if index:
+    #         return index[0]
+    #     print("ERROR: Species not found!")
+    #     print("get_index")
+    #     print(name)
+    #     print(characters.index)
+    #     print(characters['species'])
+    #     return None
+    
+    
     def get_index(name):
         """Retrieve the index of the species in the CSV file."""
-        index = characters.index[characters['species'] == name].tolist()
-        if index:
-            return index[0]
-        print("ERROR: Species not found!")
+        try:
+            index = characters.index[characters['species'] == name].tolist()
+            if index:
+                return index[0]
+        except Exception as e:
+            print(f"ERROR: {str(e)}")
+            print("get_index")
+            print(name)
+            print(characters.index)
+            print(characters['species'])
         return None
 
     def get_character(name):
@@ -328,6 +347,8 @@ def read_external_data(nexus_file, fasta_file, csv_file):
         if ch:
             return ch[0]
         print("ERROR: Species not found!")
+        print(name)
+        print(characters)
         return None
 
     # Read the FASTA file for sequence data and match by name

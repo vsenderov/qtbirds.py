@@ -522,6 +522,7 @@ def run_mcmc_inference_multithreaded  ( tree: QTNode
                         , custominf: int = None
                         , gprob:float = 0.1
                         , drift:float = 0.01
+                        , method:str = "mcmc-lightweight"
                         , cps:str = "partial"
                         #) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, str]:
                         ) -> str:
@@ -602,7 +603,7 @@ def run_mcmc_inference_multithreaded  ( tree: QTNode
     #                                 0.1.
     #
     
-    with treeppl.Model(filename=custominf, method="mcmc-lightweight", align=True, cps=cps, drift=drift, samples=total, mcmc_lw_gprob=gprob) as qtbirds:
+    with treeppl.Model(filename=custominf, method=method, align=True, cps=cps, drift=drift, samples=total, mcmc_lw_gprob=gprob) as qtbirds:
     #with treeppl.Model(filename=custominf, method="mcmc-lightweight", align=True, cps='full', samples=total, mcmc_lw_gprob=gprob) as qtbirds:
         print   ( "TreePPL MCMC model compiled. Running multithread MCMC inference for a total of"
                 , total
